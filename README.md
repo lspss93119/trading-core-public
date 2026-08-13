@@ -67,3 +67,5 @@ Bulk results reuse `CollectionResult`: `requested_count`, `successful_count`, an
 ## Optional bulk top of book
 
 Providers that advertise `Capability.BULK_TOP_OF_BOOK` may implement `BulkTopOfBookProvider.fetch_top_of_books()`. The result contains canonical `TopOfBook` values with bid/ask prices and amounts, plus explicit per-instrument errors for missing or malformed bulk responses. It represents only the best bid/ask, not full depth, VWAP, or slippage. CCXT support uses the backend's normalized `fetchBidsAsks` capability; CCXT remains an optional dependency.
+
+`TopOfBook` bid/ask amounts and `OrderBookLevel.amount` always use base-asset quantities. For linear derivatives whose backend reports contract counts, the provider converts contracts using a validated base-denominated `contractSize`; ambiguous or unconvertible contract quantities fail closed.

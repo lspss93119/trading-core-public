@@ -27,6 +27,7 @@ from .order_book import (
     ContractSizeDenomination,
     ContractSizeMetadata,
     RawAmountUnit,
+    normalize_amount_to_base,
     normalize_order_book,
 )
 
@@ -295,20 +296,29 @@ def normalize_ccxt_top_of_book(
 def normalize_ccxt_bulk_top_of_book(
     raw_ticker: object,
     *,
-    instrument: Instrument,
+    market: CCXTMarketMetadata,
     received_at: datetime,
 ) -> TopOfBook:
     """Convert one unified CCXT bulk ticker to a canonical top of book."""
     operation = "normalize_ccxt_bulk_top_of_book"
+    instrument = market.instrument
     try:
         ticker = _require_mapping(raw_ticker, field_name="ticker")
         _validate_payload_symbol(ticker, instrument)
         return TopOfBook(
             instrument=instrument,
             bid_price=_required_decimal(ticker, "bid"),
-            bid_amount=_required_decimal(ticker, "bidVolume"),
+            bid_amount=normalize_amount_to_base(
+                _required_decimal(ticker, "bidVolume"),
+                amount_unit=market.amount_unit,
+                contract_metadata=market.contract_metadata,
+            ),
             ask_price=_required_decimal(ticker, "ask"),
-            ask_amount=_required_decimal(ticker, "askVolume"),
+            ask_amount=normalize_amount_to_base(
+                _required_decimal(ticker, "askVolume"),
+                amount_unit=market.amount_unit,
+                contract_metadata=market.contract_metadata,
+            ),
             received_at=received_at,
         )
     except InvalidExchangeData as error:

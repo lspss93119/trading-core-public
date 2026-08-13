@@ -219,8 +219,11 @@ class CCXTAdapter:
                 requests_made=False,
             )
 
+        market_by_instrument: dict[Instrument, CCXTMarketMetadata] = {}
         for instrument in requested:
-            await self._market_for(instrument, operation=operation)
+            market_by_instrument[instrument] = await self._market_for(
+                instrument, operation=operation
+            )
 
         raw_top_of_books = await self._await_backend(
             self._client.fetch_bids_asks(
@@ -255,7 +258,7 @@ class CCXTAdapter:
                 data.append(
                     normalize_ccxt_bulk_top_of_book(
                         raw_top_of_book,
-                        instrument=instrument,
+                        market=market_by_instrument[instrument],
                         received_at=received_at,
                     )
                 )

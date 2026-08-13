@@ -450,9 +450,9 @@ def test_fetch_top_of_books_normalizes_three_items_with_one_bulk_call() -> None:
         (item.bid_price, item.bid_amount, item.ask_price, item.ask_amount)
         for item in result.data
     ) == (
-        (Decimal("100000"), Decimal("2"), Decimal("100003"), Decimal("4")),
-        (Decimal("2000"), Decimal("3"), Decimal("2001"), Decimal("5")),
-        (Decimal("150"), Decimal("6"), Decimal("151"), Decimal("7")),
+        (Decimal("100000"), Decimal("0.002"), Decimal("100003"), Decimal("0.004")),
+        (Decimal("2000"), Decimal("0.003"), Decimal("2001"), Decimal("0.005")),
+        (Decimal("150"), Decimal("0.006"), Decimal("151"), Decimal("0.007")),
     )
     assert all(isinstance(item, TopOfBook) for item in result.data)
     assert all(item.received_at.tzinfo is not None for item in result.data)
@@ -540,6 +540,34 @@ def test_fetch_top_of_books_accepts_zero_amounts_but_rejects_invalid_numbers() -
     assert result.data[0].bid_amount == Decimal("0")
     assert result.data[0].ask_amount == Decimal("0")
     assert [error.instrument for error in result.errors] == [instruments[1]]
+
+
+def test_fetch_top_of_books_keeps_valid_items_when_contract_metadata_is_unusable() -> (
+    None
+):
+    client = make_fake_client("binance")
+    instruments = configure_bulk_binance_client(client)
+    client.markets = dict(client.markets)
+    client.markets[instruments[1].venue_symbol] = replace_payload(
+        client.markets[instruments[1].venue_symbol],
+        contractSize=None,
+    )
+    adapter = CCXTAdapter(
+        "binance",
+        ExchangeConfig(venue="binance"),
+        client_factory=FakeCCXTFactory(clients={"binance": client}),
+    )
+
+    result = asyncio.run(adapter.fetch_top_of_books(instruments))
+
+    assert tuple(item.instrument for item in result.data) == (
+        instruments[0],
+        instruments[2],
+    )
+    assert [error.instrument for error in result.errors] == [instruments[1]]
+    assert isinstance(result.errors[0].error, InvalidExchangeData)
+    assert result.errors[0].error.operation == "normalize_ccxt_bulk_top_of_book"
+    assert result.partial is True
 
 
 def test_fetch_top_of_books_deduplicates_symbols_in_first_seen_order() -> None:

@@ -92,7 +92,7 @@ class Ticker:
 
 @dataclass(frozen=True, slots=True)
 class TopOfBook:
-    """A normalized best bid and ask snapshot with executable quantities."""
+    """A normalized best bid/ask snapshot with base-asset bid/ask quantities."""
 
     instrument: Instrument
     bid_price: Decimal

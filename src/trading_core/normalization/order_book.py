@@ -45,6 +45,22 @@ class ContractSizeMetadata:
                 raise ValueError("multiplier must be finite")
 
 
+def normalize_amount_to_base(
+    raw_amount: str | int | float | Decimal,
+    *,
+    amount_unit: RawAmountUnit,
+    contract_metadata: ContractSizeMetadata | None,
+) -> Decimal:
+    """Convert one raw amount to a canonical base-asset quantity."""
+    multiplier = _contract_multiplier(
+        amount_unit=amount_unit, contract_metadata=contract_metadata
+    )
+    amount = to_decimal(raw_amount, field_name="amount")
+    if multiplier is not None:
+        amount *= multiplier
+    return amount
+
+
 def normalize_order_book(
     *,
     instrument: Instrument,
@@ -58,11 +74,21 @@ def normalize_order_book(
     """Produce a sorted base-asset OrderBook or reject ambiguous source data."""
     venue = instrument.venue if isinstance(instrument, Instrument) else "unknown"
     try:
-        multiplier = _contract_multiplier(
+        _contract_multiplier(
             amount_unit=amount_unit, contract_metadata=contract_metadata
         )
-        normalized_bids = _normalize_levels(bids, multiplier=multiplier, reverse=True)
-        normalized_asks = _normalize_levels(asks, multiplier=multiplier, reverse=False)
+        normalized_bids = _normalize_levels(
+            bids,
+            amount_unit=amount_unit,
+            contract_metadata=contract_metadata,
+            reverse=True,
+        )
+        normalized_asks = _normalize_levels(
+            asks,
+            amount_unit=amount_unit,
+            contract_metadata=contract_metadata,
+            reverse=False,
+        )
         return OrderBook(
             instrument=instrument,
             bids=normalized_bids,
@@ -96,7 +122,8 @@ def _contract_multiplier(
 def _normalize_levels(
     levels: Sequence[tuple[object, object]],
     *,
-    multiplier: Decimal | None,
+    amount_unit: RawAmountUnit,
+    contract_metadata: ContractSizeMetadata | None,
     reverse: bool,
 ) -> tuple[OrderBookLevel, ...]:
     normalized: list[OrderBookLevel] = []
@@ -107,10 +134,10 @@ def _normalize_levels(
         price = to_decimal(
             cast(str | int | float | Decimal, raw_price), field_name="price"
         )
-        amount = to_decimal(
-            cast(str | int | float | Decimal, raw_amount), field_name="amount"
+        amount = normalize_amount_to_base(
+            cast(str | int | float | Decimal, raw_amount),
+            amount_unit=amount_unit,
+            contract_metadata=contract_metadata,
         )
-        if multiplier is not None:
-            amount *= multiplier
         normalized.append(OrderBookLevel(price=price, amount=amount))
     return tuple(sorted(normalized, key=lambda level: level.price, reverse=reverse))

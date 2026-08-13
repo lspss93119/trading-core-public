@@ -117,18 +117,132 @@ def test_ccxt_bulk_top_of_book_normalizes_unified_prices_and_amounts() -> None:
 
     top_of_book = normalize_ccxt_bulk_top_of_book(
         BINANCE_TOP_OF_BOOK,
-        instrument=instrument,
+        market=binance_market_metadata(instrument=instrument),
         received_at=RECEIVED_AT,
     )
 
     assert isinstance(top_of_book, TopOfBook)
     assert top_of_book.instrument == instrument
     assert top_of_book.bid_price == Decimal("100000")
-    assert top_of_book.bid_amount == Decimal("2")
+    assert top_of_book.bid_amount == Decimal("0.002")
     assert top_of_book.ask_price == Decimal("100003")
-    assert top_of_book.ask_amount == Decimal("4")
+    assert top_of_book.ask_amount == Decimal("0.004")
     assert top_of_book.received_at == RECEIVED_AT
     assert "do-not-export" not in repr(top_of_book)
+
+
+def test_ccxt_bulk_and_order_book_amounts_share_base_asset_semantics() -> None:
+    instrument = normalize_ccxt_instrument(BINANCE_MARKET, venue="binance")
+    market = binance_market_metadata(instrument=instrument)
+    raw_order_book = {
+        "symbol": instrument.venue_symbol,
+        "bids": [["100000", "2"]],
+        "asks": [["100003", "4"]],
+    }
+
+    top_of_book = normalize_ccxt_bulk_top_of_book(
+        BINANCE_TOP_OF_BOOK,
+        market=market,
+        received_at=RECEIVED_AT,
+    )
+    order_book = normalize_ccxt_order_book(
+        raw_order_book,
+        market=market,
+        received_at=RECEIVED_AT,
+    )
+
+    assert top_of_book.bid_amount == order_book.bids[0].amount == Decimal("0.002")
+    assert top_of_book.ask_amount == order_book.asks[0].amount == Decimal("0.004")
+
+
+def test_ccxt_bulk_top_of_book_preserves_spot_base_amounts() -> None:
+    spot_market = replace_payload(
+        BINANCE_MARKET,
+        id="BTCUSDT-SPOT",
+        symbol="BTC/USDT",
+        spot=True,
+        swap=False,
+        contract=False,
+        linear=False,
+        inverse=False,
+        contractSize=None,
+    )
+    instrument = normalize_ccxt_instrument(spot_market, venue="binance")
+    top_of_book = normalize_ccxt_bulk_top_of_book(
+        replace_payload(
+            BINANCE_TOP_OF_BOOK,
+            symbol=instrument.venue_symbol,
+            bidVolume="2.5",
+            askVolume="4.5",
+        ),
+        market=binance_market_metadata(spot_market, instrument=instrument),
+        received_at=RECEIVED_AT,
+    )
+
+    assert top_of_book.bid_amount == Decimal("2.5")
+    assert top_of_book.ask_amount == Decimal("4.5")
+
+
+def test_ccxt_bulk_top_of_book_preserves_contract_size_one() -> None:
+    raw_market = replace_payload(BINANCE_MARKET, contractSize="1")
+    instrument = normalize_ccxt_instrument(raw_market, venue="binance")
+    top_of_book = normalize_ccxt_bulk_top_of_book(
+        BINANCE_TOP_OF_BOOK,
+        market=binance_market_metadata(raw_market, instrument=instrument),
+        received_at=RECEIVED_AT,
+    )
+
+    assert top_of_book.bid_amount == Decimal("2")
+    assert top_of_book.ask_amount == Decimal("4")
+
+
+@pytest.mark.parametrize("contract_size", [None, "0"])
+def test_ccxt_bulk_top_of_book_rejects_invalid_contract_size(
+    contract_size: object,
+) -> None:
+    raw_market = replace_payload(BINANCE_MARKET, contractSize=contract_size)
+    instrument = normalize_ccxt_instrument(raw_market, venue="binance")
+
+    with pytest.raises(InvalidExchangeData) as error:
+        normalize_ccxt_bulk_top_of_book(
+            BINANCE_TOP_OF_BOOK,
+            market=binance_market_metadata(raw_market, instrument=instrument),
+            received_at=RECEIVED_AT,
+        )
+
+    assert error.value.operation == "normalize_ccxt_bulk_top_of_book"
+
+
+def test_ccxt_bulk_top_of_book_rejects_inverse_contract_amounts() -> None:
+    raw_market = replace_payload(
+        BINANCE_MARKET,
+        linear=False,
+        inverse=True,
+        contractSize="100",
+    )
+    instrument = normalize_ccxt_instrument(raw_market, venue="binance")
+
+    with pytest.raises(InvalidExchangeData) as error:
+        normalize_ccxt_bulk_top_of_book(
+            BINANCE_TOP_OF_BOOK,
+            market=binance_market_metadata(raw_market, instrument=instrument),
+            received_at=RECEIVED_AT,
+        )
+
+    assert error.value.operation == "normalize_ccxt_bulk_top_of_book"
+
+
+def test_ccxt_bulk_top_of_book_preserves_zero_contract_amounts() -> None:
+    instrument = normalize_ccxt_instrument(BINANCE_MARKET, venue="binance")
+
+    top_of_book = normalize_ccxt_bulk_top_of_book(
+        replace_payload(BINANCE_TOP_OF_BOOK, bidVolume="0", askVolume="0"),
+        market=binance_market_metadata(instrument=instrument),
+        received_at=RECEIVED_AT,
+    )
+
+    assert top_of_book.bid_amount == Decimal("0")
+    assert top_of_book.ask_amount == Decimal("0")
 
 
 @pytest.mark.parametrize(
@@ -150,7 +264,7 @@ def test_ccxt_bulk_top_of_book_rejects_malformed_unified_fields(
     with pytest.raises(InvalidExchangeData) as error:
         normalize_ccxt_bulk_top_of_book(
             replace_payload(BINANCE_TOP_OF_BOOK, **changes),
-            instrument=instrument,
+            market=binance_market_metadata(instrument=instrument),
             received_at=RECEIVED_AT,
         )
 
